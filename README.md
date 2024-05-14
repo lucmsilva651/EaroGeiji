@@ -1,59 +1,129 @@
-# N64: Recompiled
-N64: Recompiled is a tool to statically recompile N64 binaries into C code that can be compiled for any platform. This can be used for ports or tools as well as for simulating behaviors significantly faster than interpreters or dynamic recompilation can. More widely, it can be used in any context where you want to run some part of an N64 binary in a standalone environment.
+# EaroGeiji: Recompiled
+EaroGeiji: Recompiled is a project that uses [N64: Recompiled](https://github.com/Mr-Wiseguy/N64Recomp) to **statically recompile** ASCII's AeroGauge into a native port with many new features and enhancements. This project uses [RT64](https://github.com/rt64/rt64) as the rendering engine to provide some of these enhancements.
 
-This is not the first project that uses static recompilation on game console binaries. A well known example is [jamulator](https://github.com/andrewrk/jamulator), which targets NES binaries. Additionally, this is not even the first project to apply static recompilation to N64-related projects: the [IDO static recompilation](https://github.com/decompals/ido-static-recomp) recompiles the SGI IRIX IDO compiler on modern systems to faciliate matching decompilation of N64 games. This project works similarly to the IDO static recomp project in some ways, and that project was my main inspiration for making this.
+### [Check out the latest release here](https://github.com/lucmsilva651/EaroGeiji/releases/latest).
+
+### **This repository and its releases do not contain game assets. The original game is required to build or run this project.**
 
 ## Table of Contents
-* [How it Works](#how-it-works)
-* [Overlays](#overlays)
-* [How to Use](#how-to-use)
-* [Single File Output Mode](#single-file-output-mode-for-patches)
-* [RSP Microcode Support](#rsp-microcode-support)
+* [System Requirements](#system-requirements)
+* [Features](#features)
+  * [Plug and Play](#plug-and-play)
+  * [Easy-to-Use Menus](#easy-to-use-menus)
+  * [High Framerate Support](#high-framerate-support)
+  * [Widescreen and Ultrawide Support](#widescreen-and-ultrawide-support)
+<!---
+  * [Fully Intact N64 Effects](#fully-intact-n64-effects)
+  * [Gyro Aim](#gyro-aim)
+  * [Autosaving](#autosaving)
+  * [Low Input Lag](#low-input-lag)
+  * [Instant Load Times](#instant-load-times)
+  * [Linux and Steam Deck Support](#linux-and-steam-deck-support)
+-->
+<!---
 * [Planned Features](#planned-features)
+-->
+* [FAQ](#faq)
+* [Known Issues](#known-issues)
 * [Building](#building)
+* [Libraries Used and Projects Referenced](#libraries-used-and-projects-referenced)
 
-## How it Works
-The recompiler works by accepting a list of symbols and metadata alongside the binary with the goal of splitting the input binary into functions that are each individually recompiled into a C function, named according to the metadata.
+## System Requirements
+A GPU supporting Direct3D 12.0 (Shader Model 6) or Vulkan 1.2 is required to run this project. The oldest GPUs that should be supported for each vendor are:
+* GeForce GT 630
+* Radeon HD 7750 (the one from 2012, not to be confused with the RX 7000 series) and newer
+* Intel HD 510 (Skylake)
 
-Instructions are processed one-by-one and corresponding C code is emitted as each one gets processed. This translation is very literal in order to keep complexity low. For example, the instruction `addiu $r4, $r4, 0x20`, which adds `0x20` to the 32-bit value in the low bytes of register `$r4` and stores the sign extended 64-bit result in `$r4`, gets recompiled into `ctx->r4 = ADD32(ctx->r4, 0X20);` The `jal` (jump-and-link) instruction is recompiled directly into a function call, and `j` or `b` instructions (unconditional jumps and branches) that can be identified as tail-call optimizations are also recompiled into function calls as well. Branch delay slots are handled by duplicating instructions as necessary. There are other specific behaviors for certain instructions, such as the recompiler attempting to turn a `jr` instruction into a switch-case statement if it can tell that it's being used with a jump table. The recompiler has mostly been tested on binaries built with old MIPS compilers (e.g. mips gcc 2.7.2 and IDO) as well as modern clang targeting mips. Modern mips gcc may trip up the recompiler due to certain optimizations it can do, but those cases can probably be avoided by setting specific compilation flags.
+A CPU supporting the AVX instruction set is also required (Intel Core 2000 series or AMD Bulldozer and newer).
 
-Every output function created by the recompiler is currently emitted into its own file. An option may be provided in the future to group functions together into output files, which should help improve build times of the recompiler output by reducing file I/O in the build process.
+If you have issues with crashes on startup, make sure your graphics drivers are fully up to date. 
 
-Recompiler output can be compiled with any C compiler (tested with msvc, gcc and clang). The output is expected to be used with a runtime that can provide the necessary functionality and macro implementations to run it. An example of most of the required macro implementations can be found in the Zelda 64: Recompiled project [here](https://github.com/Mr-Wiseguy/Zelda64Recomp/blob/dev/include/recomp.h), with the project also containing accompanying code for implementing the rest of the required runtime.
+## Features
 
-## Overlays
-Statically linked and relocatable overlays can both be handled by this tool. In both cases, the tool emits function lookups for jump-and-link-register (i.e. function pointers or virtual functions) which the provided runtime can implement using any sort of lookup table. For example, the instruction `jalr $25` would get recompiled as `LOOKUP_FUNC(ctx->r25)(rdram, ctx);` The runtime can then maintain a list of which program sections are loaded and at what address they are at in order to determine which function to run whenever a lookup is triggered during runtime.
+#### Plug and Play
+Simply provide your copy of the North American version of the game in the main menu and start playing! This project will automatically load assets from the provided copy, so there is no need to go through a separate extraction step or build the game yourself. Other versions of the game may be supported in the future.
 
-For relocatable overlays, the tool will modify supported instructions possessing relocation data (`lui`, `addiu`, load and store instructions) by emitting an extra macro that enables the runtime to relocate the instruction's immediate value field. For example, the instruction `lui $24, 0x80C0` in a section beginning at address `0x80BFA100` with a relocation against a symbol with an address of `0x80BFA730` will get recompiled as `ctx->r24 = S32(RELOC_HI16(1754, 0X630) << 16);`, where 1754 is the index of this section. The runtime can then implement the RELOC_HI16 and RELOC_LO16 macros in order to handle modifying the immediate based on the current loaded address of the section.
+#### Easy-to-Use Menus
+Gameplay settings, graphics settings, input mappings, and audio settings can all be configured with the in-game config menu. The menus can all be used with mouse, controller, or keyboard for maximum convenience.
 
-Support for relocations for TLB mapping is coming in the future, which will add the ability to provide a list of MIPS32 relocations so that the runtime can relocate them on load. Combining this with the functionality used for relocatable overlays should allow running most TLB mapped code without incurring a performance penalty on every RAM access.
+#### High Framerate Support
+Play at any framerate you want thanks to functionality provided by RT64! Game objects and terrain, texture scrolling, screen effects, and most HUD elements are all rendered at high framerates. By default, this project is configured to run at your monitor's refresh rate. You can also play at the original framerate of the game if you prefer. **Changing framerate has no effect on gameplay.**
 
-## How to Use
-The recompiler is configured by providing a toml file in order to configure the recompiler behavior, which is the only argument provided to the recompiler. The toml is where you specify input and output file paths, as well as optionally stub out specific functions, skip recompilation of specific functions, and patch single instructions in the target binary. There is also planned functionality to be able to emit hooks in the recompiler output by adding them to the toml (the `[[patches.func]]` and `[[patches.hook]]` sections of the linked toml below), but this is currently unimplemented. Documentation on every option that the recompiler provides is not currently available, but an example toml can be found in the Zelda 64: Recompiled project [here](https://github.com/Mr-Wiseguy/Zelda64Recomp/blob/dev/us.rev1.toml).
+**Note**: External framerate limiters (such as the NVIDIA Control Panel) are known to potentially cause problems, so if you notice any stuttering then turn them off and use the manual framerate slider in the in-game graphics menu instead.
 
-Currently, the only way to provide the required metadata is by passing an elf file to this tool. The easiest way to get such an elf is to set up a disassembly or decompilation of the target binary, but there will be support for providing the metadata via a custom format to bypass the need to do so in the future.
+#### Widescreen and Ultrawide Support
+Any aspect ratio is supported, with most effects modded to work correctly in widescreen. The HUD can also be positioned at 16:9 when using ultrawide aspect ratios if preferred.
 
-## Single File Output Mode (for Patches)
-This tool can also be configured to recompile in "single file output" mode via an option in the configuration toml. This will emit all of the functions in the provided elf into a single output file. The purpose of this mode is to be able to compile patched versions of functions from the target binary.
+**Note**: Some animation quirks can be seen at the edges of the screen in certain cutscenes when using very wide aspect ratios.
+<!---
+#### Gyro Aim
+When playing with a supported controller, first-person items such as the bow can be aimed with your controller's gyro sensor. This includes (but is not limited to) controllers such as the Dualshock 4, Dualsense, Switch Pro, and most third party Switch controllers (such as the 8BitDo Pro 2 in Switch mode).
 
-This mode can be combined with the functionality provided by almost all linkers (ld, lld, MSVC's link.exe, etc.) to replace functions from the original recompiler output with modified versions. Those linkers only look for symbols in a static library if they weren't already found in a previous input file, so providing the recompiled patches to the linker before providing the original recompiler output will result in the patches taking priority over functions with the same names from the original recompiler output.
+**Note**: Gamepad mappers such as BetterJoy or DS4Windows may intercept gyro data and prevent the game from receiving it. Most controllers are natively supported, so turning gamepad mappers off is recommended if you want to use gyro.
 
-This saves a tremendous amount of time while iterating on patches for the target binary, as you can bypass rerunning the recompiler on the target binary as well as compiling the original recompiler output. An example of using this single file output mode for that purpose can be found in the Zelda 64: Recompiled project [here](https://github.com/Mr-Wiseguy/Zelda64Recomp/blob/dev/patches.toml), with the corresponding Makefile that gets used to build the elf for those patches [here](https://github.com/Mr-Wiseguy/Zelda64Recomp/blob/dev/patches/Makefile).
+#### Autosaving
+Never worry about losing progress if your power goes out thanks to autosaving! The autosave system is designed to respect Majora's Mask's original save system and maintain the intention of owl saves by triggering automatically and replacing the previous autosave or owl save. However, if you'd still rather play with the untouched save system, simply turn off autosaving in the ingame menu.
 
-## RSP Microcode Support
-RSP microcode can also be recompiled with this tool. Currently there is no support for recompiling RSP overlays, but it may be added in the future if desired. Documentation on how to use this functionality will be coming soon.
+#### Low Input Lag
+This project has been optimized to have as little input lag as possible, making the game feel more responsive than ever!
+
+#### Instant Load Times
+Saving and loading files, going from place to place, and pausing all happen in the blink of an eye thanks to the game running natively on modern hardware.
+
+#### Linux and Steam Deck Support
+A Linux binary is available for playing on most up-to-date distros, including on the Steam Deck.
+
+To play on Steam Deck, extract the Linux build onto your deck. Then, in desktop mode, right click the Zelda64Recompiled executable file and select "Add to Steam" as shown. From there, you can return to Gaming mode and configure the controls as needed. See the [Steam Deck gyro aim FAQ section](#how-do-i-set-up-gyro-aiming-on-steam-deck) for more detailed instructions.
+
 
 ## Planned Features
-* Custom metadata format to provide symbol names, relocations, and any other necessary data in order to operate without an elf
-* Emitting multiple functions per output file to speed up compilation
-* Support for recording MIPS32 relocations to allow runtimes to relocate them for TLB mapping
-* Ability to recompile into a dynamic language (such as Lua) to be able to load code at runtime for mod support
+* Dual analog control scheme (with analog camera)
+* Configurable deadzone and analog stick sensitivity
+* Ocarina of Time support
+* Mod support and Randomizer
+* Texture Packs
+* Model Replacements
+* Ray Tracing (via RT64)
+-->
+
+## FAQ
+
+#### What is static recompilation?
+Static recompilation is the process of automatically translating an application from one platform to another. For more details, check out the full description of how this project's recompilation works here: [N64: Recompiled](https://github.com/Mr-Wiseguy/N64Recomp).
+
+#### How is this related to the decompilation project?
+Unlike N64 ports in the past, this project is not based on the source code provided by a decompilation of the game. This is because static recompilation bypasses the need for decompiled source code when making a port, allowing ports to be made **without source code**. However, the reverse engineering work done by the decompilation team was invaluable for providing some of the enhancements featured in this project. For this reason, the project uses headers and some functions from the decompilation project in order to make modifications to the game. Many thanks to the decompilation team for all of the hard work they've done.
+
+<!---
+#### How do I set up gyro aiming on Steam Deck?
+This project provides mouse aiming as a way to allow using gyro on Steam Deck, as the Steam Deck's gyro sensors cannot be read directly. First, launch the game in Gaming Mode, press the Steam button and go to "Controller Settings". Choose "Controller Settings" again in the menu that follows, and then set "Gyro Behavior" to "As Mouse".
+
+![Controller Settings menu](docs/deck_gyro_1.jpg)
+
+You'll probably also want to change the default behavior so that you don't need to be touching the right stick to allow gyro input. To do so, click on the Gear icon to the right of "Gyro Behavior" and ensure that "Gyro Activation Buttons" is set to "None Selected (Gyro Always On)." If this isn't the case, then select that option and then press "Select None" in the following menu.
+-->
+
+## Known Issues
+* Intel GPUs on Linux may not currently work. If you have experience with Vulkan development on Linux, help here would be greatly appreciated!
+* The prebuilt Linux binary may not work correctly on some distributions of Linux. If you encounter such an issue, building the project locally yourself is recommended. A Flatpak or AppImage may be provided in the future to solve this issue. Alternatively, running the Windows version with Proton is known to work well and may work around this issue.
+* Overlays such as MSI Afterburner and other software such as Wallpaper Engine can cause performance issues with this project that prevent the game from rendering correctly. Disabling such software is recommended.
+<!---
+* The motion blur effect used by the game was capped to prevent ghosting at incredibly high framerates, which causes it to be less noticeable (this is only really noticeable above 120FPS). This may be fixed in the future by offering the option to render to an HDR framebuffer internally, which would allow it to be uncapped.
+-->
 
 ## Building
-This project can be built with CMake 3.20 or above and a C++ compiler that supports C++20. This repo uses git submodules, so be sure to clone recursively (`git clone --recurse-submodules`) or initialize submodules recursively after cloning (`git submodule update --init --recursive`). From there, building is identical to any other cmake project, e.g. run `cmake` in the target build folder and point it at the root of this repo, then run `cmake --build .` from that target folder.
+Building is not required to play this project, as prebuilt binaries (which do not contain game assets) can be found in the [Releases section](https://github.com/Mr-Wiseguy/Zelda64Recomp/releases). Instructions on how to build this project are being worked on and will be available in the near future.
 
-## Libraries Used
-* [rabbitizer](https://github.com/Decompollaborate/rabbitizer) for instruction decoding/analysis
-* [ELFIO](https://github.com/serge1/ELFIO) for elf parsing
-* [toml11](https://github.com/ToruNiina/toml11) for toml parsing
-* [fmtlib](https://github.com/fmtlib/fmt)
+## Libraries Used and Projects Referenced
+* [RT64](https://github.com/rt64/rt64) for the project's rendering engine
+* [RmlUi](https://github.com/mikke89/RmlUi) for building the menus and launcher
+* [lunasvg](https://github.com/sammycage/lunasvg) for SVG rendering, used by RmlUi
+* [FreeType](https://freetype.org/) for font rendering, used by RmlUi  
+* [moodycamel::ConcurrentQueue](https://github.com/cameron314/concurrentqueue) for semaphores and fast, lock-free MPMC queues
+* [Ares emulator](https://github.com/ares-emulator/ares) for RSP vector instruction reference implementations, used in RSP recompilation
+<!---
+* [Gamepad Motion Helpers](https://github.com/JibbSmart/GamepadMotionHelpers) for sensor fusion and calibration algorithms to implement gyro aiming
+* [Majora's Mask Decompilation](https://github.com/zeldaret/mm) for headers and some function definitions, used for making patches or some enhancements
+-->
+
+Special thanks to [thecozies](github.com/thecozies) for designing and helping implement the launcher and config menus!
